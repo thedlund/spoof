@@ -1,0 +1,22 @@
+<assembly>
+<id>dist</id>
+<formats>
+    <format>zip</format>
+</formats>
+<files>
+    <file>
+        <source>target/${project.artifactId}.jar</source>
+        <outputDirectory>bin/</outputDirectory>
+    </file>
+
+</files>
+<fileSets>
+    <fileSet>
+        <directory>${project.basedir}/bin</directory>
+        <includes>
+            <include>*.cmd</include>
+        </includes>
+        <useDefaultExcludes>true</useDefaultExcludes>
+    </fileSet>
+</fileSets>
+</assembly>
