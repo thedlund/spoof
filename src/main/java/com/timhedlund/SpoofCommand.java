@@ -14,9 +14,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import me.tongfei.progressbar.ProgressBar;
 import org.apache.commons.net.util.SubnetUtils;
 
-import me.tongfei.progressbar.ProgressBar;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -25,154 +25,165 @@ import picocli.CommandLine.Parameters;
 @Command(mixinStandardHelpOptions = true)
 public class SpoofCommand implements Runnable {
 
-	@Option(names = { "-H", "--host" }, description = "The host header")
-	String mHost;
+  @Option(
+      names = {"-H", "--host"},
+      description = "The host header")
+  private String host;
 
-	@Option(names = { "-c",
-			"--connection-timout" }, description = "Sets a specified timeout value, in milliseconds, to be used when opening a communications link", defaultValue = "5000")
-	int mConnectTimeout;
+  @Option(
+      names = {"-c", "--connection-timout"},
+      description =
+          "Sets a specified timeout value, in milliseconds, to be used when opening a communications link",
+      defaultValue = "5000")
+  private int connectTimeout;
 
-	@Option(names = { "-r",
-			"--read-timout" }, description = "Sets the read timeout to a specified timeout, inmilliseconds.", defaultValue = "5000")
-	int mReadTimeout;
+  @Option(
+      names = {"-r", "--read-timout"},
+      description = "Sets the read timeout to a specified timeout, inmilliseconds.",
+      defaultValue = "5000")
+  private int readTimeout;
 
-	@Option(names = { "-f",
-			"--follow-redirects" }, description = "Sets whether HTTP redirects (requests with response code 3xx) should be automatically followed", defaultValue = "true")
-	boolean mFollowRedirects;
+  @Option(
+      names = {"-f", "--follow-redirects"},
+      description =
+          "Sets whether HTTP redirects (requests with response code 3xx) should be automatically followed",
+      defaultValue = "true")
+  private boolean followRedirects;
 
-	@Option(names = { "--ip-range" }, description = "Sets an ip range with CIDR notation which will be spoofed with.")
-	String mCIDR;
-	
-	@Option(names = { "--max-threads" }, 
-			description = "Sets the max threads that will be used concurrently. This option is only available when using --ip-range.", 
-			defaultValue = "30")
-	int mThreads;
+  @Option(
+      names = {"--ip-range"},
+      description = "Sets an ip range with CIDR notation which will be spoofed with.")
+  private String cidr;
 
-	@Parameters(index = "0", description = "The URL to check. E.g https://192.168.0.1/monkey")
-	private String mURL;
+  @Option(
+      names = {"--max-threads"},
+      description =
+          "Sets the max threads that will be used concurrently. This option is only available when using --ip-range.",
+      defaultValue = "30")
+  private int threads;
 
-	public static void main(String[] args) {
-		System.setProperty("sun.net.http.allowRestrictedHeaders", "true");
-		new CommandLine(new SpoofCommand()).execute(args);
-	}
+  @Parameters(index = "0", description = "The URL to check. E.g https://192.168.0.1/monkey")
+  private String urlToCheck;
 
-	@Override
-	public void run() {
+  public static void main(String[] args) {
+    System.setProperty("sun.net.http.allowRestrictedHeaders", "true");
+    new CommandLine(new SpoofCommand()).execute(args);
+  }
 
-		System.out.printf("Will check the URL %s with host header \"Host: %s\"\n", mURL, mHost);
+  @Override
+  public void run() {
 
-		// Parse URL
-		final URL url = parseURL(mURL);
+    System.out.printf("Will check the URL %s with host header \"Host: %s\"\n", urlToCheck, host);
 
-		// Range check
-		if (mCIDR != null) {
-			
-			SubnetUtils utils = new SubnetUtils(mCIDR);
-			String[] addresses = utils.getInfo().getAllAddresses();
-			
-			
-			System.out.printf("Range check: %s - %s\n", addresses[0], addresses[addresses.length - 1] );
-			
-			List<String> addressList = new ArrayList<>(Arrays.asList(addresses));
-			
-			ExecutorService executor = Executors.newFixedThreadPool(mThreads);
-			List<Future<String>> futures = new ArrayList<>();
-			
-			for (String address : addressList) {
-				Future<String> future = executor.submit(() -> {
-					URL newUrl = replaceHostInUrl(url, address);	
-					return doGet(newUrl);
-				});
-				
-				futures.add(future);
-			}
-			
-			List<String> result = new ArrayList<>();
-			for (Future<String> future : ProgressBar.wrap(futures, "Hitting")) {
-				try {
-					result.add(future.get());
-				} catch (InterruptedException e) {
-					e.printStackTrace();
-				} catch (ExecutionException e) {
-					e.printStackTrace();
-				}
-			}
-			
-			result.stream().filter(s -> !"".equals(s)).forEach(s -> System.out.println(s));
-			
-			executor.shutdown();
+    // Parse URL
+    final URL url = parseUrl(urlToCheck);
 
-		} else {
-			System.out.println(doGet(url));
-		}
+    // Range check
+    if (cidr != null) {
 
-	}
+      SubnetUtils utils = new SubnetUtils(cidr);
+      String[] addresses = utils.getInfo().getAllAddresses();
 
-	public URL replaceHostInUrl(URL originalURL, String newHost) {
-		URL url = null;
-		try {
-			url = new URL(originalURL.getProtocol(), newHost, originalURL.getFile());
-		} catch (MalformedURLException e) {
-			e.printStackTrace();
-			System.exit(1);
-		}
-		return url;
-	}
+      System.out.printf("Range check: %s - %s\n", addresses[0], addresses[addresses.length - 1]);
 
-	private URL parseURL(String url) {
-		URL parsedURL = null;
-		try {
-			parsedURL = new URL(url);
-		} catch (MalformedURLException e) {
-			e.printStackTrace();
-			System.exit(1);
-		}
-		return parsedURL;
-	}
+      List<String> addressList = new ArrayList<>(Arrays.asList(addresses));
 
-	private String doGet(URL url) {
-		
-		HttpURLConnection con = null;
-		StringBuilder response = new StringBuilder();
-		
-		try {
-			
-			con = (HttpURLConnection) url.openConnection();
-			con.setRequestMethod("GET");
+      ExecutorService executor = Executors.newFixedThreadPool(threads);
+      List<Future<String>> futures = new ArrayList<>();
 
-			if (mHost != null) {
-				con.setRequestProperty("Host", mHost);
-			}
+      for (String address : addressList) {
+        Future<String> future =
+            executor.submit(
+                () -> {
+                  URL newUrl = replaceHostInUrl(url, address);
+                  return doGet(newUrl);
+                });
 
-			con.setInstanceFollowRedirects(mFollowRedirects);
-			con.setConnectTimeout(mConnectTimeout);
-			con.setReadTimeout(mReadTimeout);
+        futures.add(future);
+      }
 
-			int responseCode = con.getResponseCode();
-			response.append(responseCode + " ");
+      List<String> result = new ArrayList<>();
+      for (Future<String> future : ProgressBar.wrap(futures, "Hitting")) {
+        try {
+          result.add(future.get());
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        } catch (ExecutionException e) {
+          e.printStackTrace();
+        }
+      }
 
-		}
-		catch (SocketException se) {
-			response.append(se.getMessage());
-		}
-		catch (SocketTimeoutException ste) {
-			// Consuela - it's okay.
-		} 
-		catch (IOException e) {
-			response.append(e.getMessage());
-		}
-		finally {
-			if (con != null) {
-				con.disconnect();
-			}
-		}
-		
-		// Insert host if we got a meaningful response.
-		if (response.length() != 0) {
-			response.insert(0, url.getHost() + " : ");
-		}
-		
-		return response.toString();
-	}
+      result.stream().filter(s -> !"".equals(s)).forEach(s -> System.out.println(s));
 
+      executor.shutdown();
+
+    } else {
+      System.out.println(doGet(url));
+    }
+  }
+
+  private URL replaceHostInUrl(URL originalUrl, String newHost) {
+    URL url = null;
+    try {
+      url = new URL(originalUrl.getProtocol(), newHost, originalUrl.getFile());
+    } catch (MalformedURLException e) {
+      e.printStackTrace();
+      System.exit(1);
+    }
+    return url;
+  }
+
+  private URL parseUrl(String url) {
+    URL parsedUrl = null;
+    try {
+      parsedUrl = new URL(url);
+    } catch (MalformedURLException e) {
+      e.printStackTrace();
+      System.exit(1);
+    }
+    return parsedUrl;
+  }
+
+  private String doGet(URL url) {
+
+    HttpURLConnection con = null;
+    StringBuilder response = new StringBuilder();
+
+    try {
+
+      con = (HttpURLConnection) url.openConnection();
+      con.setRequestMethod("GET");
+
+      if (host != null) {
+        con.setRequestProperty("Host", host);
+      }
+
+      con.setInstanceFollowRedirects(followRedirects);
+      con.setConnectTimeout(connectTimeout);
+      con.setReadTimeout(readTimeout);
+
+      int responseCode = con.getResponseCode();
+      response.append(responseCode + " ");
+
+    } catch (SocketException se) {
+      response.append(se.getMessage());
+    } catch (SocketTimeoutException ste) {
+      // Consuela - it's okay.
+    } catch (IOException e) {
+      response.append(e.getMessage());
+    } finally {
+      if (con != null) {
+        con.disconnect();
+      }
+    }
+
+    // Insert host if we got a meaningful response.
+    if (response.length() != 0) {
+      response.insert(0, url.getHost() + " : ");
+
+      return response.toString();
+    }
+
+    return null;
+  }
 }
